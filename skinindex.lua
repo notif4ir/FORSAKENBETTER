@@ -1,16 +1,11 @@
-local IGNORE_FORBIDDEN = false
+local IGNORE_FORBIDDEN = true
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local TweenService = game:GetService("TweenService")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
-local Assets = ReplicatedStorage:WaitForChild("Assets")
-local KillersRoot = Assets:WaitForChild("Killers")
-local SurvivorsRoot = Assets:WaitForChild("Survivors")
-local SkinsRoot = Assets:WaitForChild("Skins")
 local forbidden = {"#","!","_"}
 local function containsForbidden(s)
 	if not IGNORE_FORBIDDEN then return false end
@@ -27,6 +22,19 @@ local function normalize(s)
 	out = string.gsub(out, "[#_!]", "")
 	return out
 end
+local function safeWaitForChild(parent, name)
+	if not parent then return nil end
+	local found = parent:FindFirstChild(name)
+	while not found do
+		found = parent:FindFirstChild(name)
+		wait(0.1)
+	end
+	return found
+end
+local AssetsRoot = safeWaitForChild(ReplicatedStorage, "Assets")
+local KillersRoot = safeWaitForChild(AssetsRoot, "Killers")
+local SurvivorsRoot = safeWaitForChild(AssetsRoot, "Survivors")
+local SkinsRoot = safeWaitForChild(AssetsRoot, "Skins")
 local baseFolder = "SkinIndexer"
 pcall(function() makefolder(baseFolder) end)
 pcall(function() makefolder(baseFolder.."/killers") end)
@@ -45,6 +53,7 @@ end
 local meta = readJson(metaPath) or {skinpoints = 0, owned = {killers = {}, survivors = {}}, totalIndexed = 0}
 local function recomputeMetaTotals()
 	local total = 0
+	meta.owned = meta.owned or {killers = {}, survivors = {}}
 	for _,sideKey in ipairs({"killers","survivors"}) do
 		local sideTable = meta.owned[sideKey] or {}
 		for _,skins in pairs(sideTable) do
@@ -67,6 +76,7 @@ end
 local function saveCharData(path, data) writeJson(path, data) end
 local function gatherCategories(root)
 	local out = {}
+	if not root then return out end
 	for _,v in ipairs(root:GetChildren()) do
 		if not containsForbidden(v.Name) then table.insert(out, v.Name) end
 	end
@@ -74,6 +84,7 @@ local function gatherCategories(root)
 	return out
 end
 local function getSkinsForCategory(side, categoryName)
+	if not SkinsRoot then return {} end
 	local sideKey = side:sub(1,1):upper()..side:sub(2)
 	local sideRoot = SkinsRoot:FindFirstChild(sideKey) or SkinsRoot:FindFirstChild(side)
 	if not sideRoot then return {} end
@@ -87,6 +98,7 @@ local function getSkinsForCategory(side, categoryName)
 	return out
 end
 local function findCategoryMatch(sideRoot, actorName)
+	if not sideRoot then return nil end
 	local norm = normalize(actorName)
 	for _,v in ipairs(sideRoot:GetChildren()) do
 		if (not containsForbidden(v.Name)) and normalize(v.Name) == norm then
@@ -97,6 +109,7 @@ local function findCategoryMatch(sideRoot, actorName)
 end
 local function countTotalSkinsInGame()
 	local total = 0
+	if not SkinsRoot then return 0 end
 	for _,side in ipairs({"Killers","Survivors"}) do
 		local sideRoot = SkinsRoot:FindFirstChild(side)
 		if sideRoot then
@@ -114,6 +127,7 @@ end
 local function indexSkins()
 	local added = 0
 	local function scanSide(folder, sideKey, sideRootSource)
+		if not folder then return end
 		for _,model in ipairs(folder:GetChildren()) do
 			if model:IsA("Model") then
 				local actor = model:GetAttribute("ActorDisplayName")
@@ -136,7 +150,7 @@ local function indexSkins()
 			end
 		end
 	end
-	local playersFolder = Workspace:FindFirstChild("Players") or Workspace
+	local playersFolder = Workspace:FindFirstChild("Players")
 	if playersFolder and playersFolder:FindFirstChild("Killers") then
 		scanSide(playersFolder.Killers, "killers", KillersRoot)
 	end
@@ -235,15 +249,6 @@ skinPointsLabel.TextSize = 14
 skinPointsLabel.BackgroundTransparency = 1
 skinPointsLabel.TextColor3 = Color3.fromRGB(210,210,210)
 skinPointsLabel.Parent = topBar
-local refreshIndicator = Instance.new("TextLabel")
-refreshIndicator.Size = UDim2.new(0.18,0,0.6,0)
-refreshIndicator.Position = UDim2.new(0.82,0,0.15,0)
-refreshIndicator.Text = "Auto"
-refreshIndicator.Font = Enum.Font.Gotham
-refreshIndicator.TextSize = 13
-refreshIndicator.BackgroundTransparency = 1
-refreshIndicator.TextColor3 = Color3.fromRGB(150,150,150)
-refreshIndicator.Parent = topBar
 local leftFrame = Instance.new("Frame")
 leftFrame.Size = UDim2.new(0.22,0,0.75,0)
 leftFrame.Position = UDim2.new(0.03,0,0.18,0)
@@ -373,16 +378,11 @@ function refreshSkins()
 		uc.Parent = btn
 	end
 end
-local tweenInfo = TweenInfo.new(0.32, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local function openUI()
 	mainFrame.Visible = true
-	mainFrame.Position = UDim2.new(0.5,0,0.45,0)
-	mainFrame.BackgroundTransparency = 1
-	TweenService:Create(mainFrame, tweenInfo, {BackgroundTransparency = 0}):Play()
 end
 local function closeUI()
-	TweenService:Create(mainFrame, tweenInfo, {BackgroundTransparency = 1}):Play()
-	delay(0.28, function() mainFrame.Visible = false end)
+	mainFrame.Visible = false
 end
 centerButton.MouseButton1Click:Connect(function()
 	if mainFrame.Visible then
@@ -436,14 +436,17 @@ RunService.RenderStepped:Connect(function(dt)
 end)
 spawn(function()
 	while true do
-		local added = indexSkins()
-		if added > 0 then
-			skinPointsLabel.Text = "Indexed Points: "..tostring(meta.skinpoints or 0)
-			refreshSkins()
-			local tw = TweenService:Create(skinPointsLabel, TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, 1, true), {TextTransparency = 0.2})
-			tw:Play()
-			delay(0.14, function() TweenService:Create(skinPointsLabel, TweenInfo.new(0.18, Enum.EasingStyle.Quad), {TextTransparency = 0}):Play() end)
+		local playersFolder = Workspace:FindFirstChild("Players")
+		if not playersFolder then
+			wait(1)
+		else
+			local added = indexSkins()
+			if added > 0 then
+				recomputeMetaTotals()
+				skinPointsLabel.Text = "Indexed Points: "..tostring(meta.skinpoints or 0)
+				refreshSkins()
+			end
+			wait(30)
 		end
-		wait(30)
 	end
 end)
