@@ -446,7 +446,7 @@ spawn(function()
 				skinPointsLabel.Text = "Indexed Points: "..tostring(meta.skinpoints or 0)
 				refreshSkins()
 			end
-			wait(30)
+			wait(5)
 		end
 	end
 end)
